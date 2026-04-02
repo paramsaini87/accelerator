@@ -1,0 +1,4 @@
+read_verilog designs/accelerator/rtl/systolic_pe.v
+synth
+export_sky130 designs/accelerator/output systolic_pe 10.0
+exit
