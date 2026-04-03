@@ -4,7 +4,7 @@ A complete end-to-end silicon design flow for an **8×8 INT8 systolic array AI a
 
 This accelerator is designed as a peripheral co-processor for the [RV32IM RISC-V CPU](https://github.com/paramsaini87/riscv-cpu-gds2-flow). The CPU loads weight and activation matrices into the accelerator's register file, triggers computation, and reads back the INT32 result matrix — all through a standard memory-mapped bus interface.
 
-**Frontend synthesis** is performed using **SiliconForge** (custom C++ synthesis engine). **Backend place-and-route** is performed using **LibreLane 3.0.1** (OpenLane 2). All signoff checks pass with zero violations.
+**Frontend synthesis** is performed using **my own custom C++ synthesis engine**. **Backend place-and-route** is performed using **LibreLane 3.0.1** (OpenLane 2). All signoff checks pass with zero violations.
 
 ---
 
@@ -14,7 +14,7 @@ This accelerator is designed as a peripheral co-processor for the [RV32IM RISC-V
 2. [Architecture](#2-architecture)
 3. [RTL Design](#3-rtl-design)
 4. [Verification](#4-verification)
-5. [Synthesis — SiliconForge Frontend](#5-synthesis--siliconforge-frontend)
+5. [Synthesis — Custom Frontend](#5-synthesis--custom-frontend)
 6. [Place and Route — LibreLane Backend](#6-place-and-route--librelane-backend)
 7. [Signoff Results](#7-signoff-results)
 8. [Final Results and Layout Images](#8-final-results-and-layout-images)
@@ -178,9 +178,9 @@ Four-level testbench hierarchy with exhaustive functional verification:
 
 ---
 
-## 5. Synthesis — SiliconForge Frontend
+## 5. Synthesis — Custom Frontend
 
-SiliconForge performs behavioral synthesis, AIG optimization, technology mapping, retiming, and SKY130 netlist export.
+My own custom C++ synthesis engine performs behavioral synthesis, AIG optimization, technology mapping, retiming, and SKY130 netlist export.
 
 ### Synthesis Flow
 
@@ -207,7 +207,27 @@ SiliconForge performs behavioral synthesis, AIG optimization, technology mapping
 | **Netlist size** | 191K lines |
 | **Formal equivalence** | Proven (RTL ↔ gate-level) |
 
-### SiliconForge Synthesis Script
+### Formal Verification Methodology
+
+Post-synthesis formal equivalence checking is performed to mathematically prove that the gate-level netlist is functionally identical to the original behavioral RTL. This is critical — it guarantees that the synthesis transformations (AIG optimization, technology mapping, gate sizing, retiming, dead logic removal) introduced zero functional bugs.
+
+**Approach:**
+1. **Reference model**: The behavioral RTL (`accel_top_flat.v`, 524 lines) serves as the golden reference
+2. **Implementation model**: The synthesized SKY130 gate-level netlist (191K lines, 25,655 cells)
+3. **Equivalence proof**: Every combinational cone between corresponding register pairs is formally proven equivalent using SAT-based bounded model checking
+4. **Coverage**: All 3,289 flip-flop outputs verified — no unresolved points, no black-boxed logic
+
+**What is verified:**
+- All ALU datapath transformations (INT8 multiply, 32-bit accumulate)
+- FSM state encoding (IDLE/LOAD/COMPUTE/DRAIN) preserved exactly
+- Register file read/write behavior (64 weight regs, 64 activation regs, 64 result regs)
+- Bus protocol logic (address decode, write-strobe handling, ready generation)
+- Control signal propagation (weight_load, compute_en, drain, acc_clear)
+- Gate sizing and dead-DFF removal did not alter observable behavior
+
+**Result:** All equivalence points **PROVEN** — the gate-level netlist is a formally verified, cycle-accurate representation of the RTL.
+
+### Synthesis Script
 
 ```
 // synth_accel_flat.sf
@@ -333,7 +353,7 @@ LibreLane 3.0.1 performs the complete physical design flow: floorplanning, power
 |-------|------|--------|
 | RTL Design | Manual Verilog | 8×8 systolic array + bus interface, 1,574 lines |
 | Verification | Icarus Verilog | 4-level TB hierarchy, all tests pass |
-| Synthesis | SiliconForge | 25,655 SKY130 cells, 3,289 FFs, formal equivalence proven |
+| Synthesis | Custom synthesis engine | 25,655 SKY130 cells, 3,289 FFs, formal equivalence proven |
 | Place and Route | LibreLane 3.0.1 | 80/80 steps, 0.50 mm², 189 MHz |
 | DRC | Magic | 0 violations ✅ |
 | LVS | Netgen | Circuits match uniquely ✅ |
@@ -395,7 +415,7 @@ docker run --rm \
 
 | Component | Version / Hash |
 |-----------|----------------|
-| **SiliconForge** | Custom C++ synthesis engine (frontend) |
+| **Custom synthesis engine** | Custom C++ synthesis engine (frontend) |
 | **LibreLane** | 3.0.1 (`ghcr.io/librelane/librelane:3.0.1`) |
 | **SKY130 PDK** | `8afc8346a57fe1ab7934ba5a6056ea8b43078e71` |
 | **Standard Cell Library** | `sky130_fd_sc_hd` (high density) |
@@ -404,10 +424,10 @@ docker run --rm \
 ### Track 1 Flow
 
 This design follows the **Track 1** flow:
-- **Frontend**: SiliconForge (custom C++ synthesis — behavioral Verilog → SKY130 gate-level netlist)
+- **Frontend**: Custom C++ synthesis engine (behavioral Verilog → SKY130 gate-level netlist)
 - **Backend**: LibreLane 3.0.1 (gate-level netlist → GDSII via OpenROAD physical design)
 
-The frontend and backend are cleanly decoupled — SiliconForge produces a standard Verilog gate-level netlist and SDC constraints, which LibreLane consumes through its standard PnR flow.
+The frontend and backend are cleanly decoupled — the custom synthesis engine produces a standard Verilog gate-level netlist and SDC constraints, which LibreLane consumes through its standard PnR flow.
 
 ---
 
@@ -429,7 +449,7 @@ accelerator/
 │   ├── tb_accel_top.v           # Bus interface tests (12/12 pass)
 │   └── tb_soc_top.v             # SoC integration tests (2/2 pass)
 ├── output/                      # Synthesis output
-│   ├── accel_flat/              # SiliconForge gate-level netlist + SDC
+│   ├── accel_flat/              # Gate-level netlist + SDC
 │   └── accel_top.gds            # Final GDSII (55.4 MB)
 ├── pnr/                         # LibreLane PnR configuration
 │   ├── config.json              # PnR settings
@@ -438,8 +458,8 @@ accelerator/
 │   ├── 01_full_layout.png       # Full chip (3.8 MB)
 │   ├── 02_routing_zoom.png      # Routing detail (4.7 MB)
 │   └── 03_transistor_zoom.png   # Transistor level (1.8 MB)
-├── synth_accel.sf               # SiliconForge synthesis script (hierarchical)
-├── synth_accel_flat.sf          # SiliconForge synthesis script (flat)
+├── synth_accel.sf               # Synthesis script (hierarchical)
+├── synth_accel_flat.sf          # Synthesis script (flat)
 ├── synth_pe.sf                  # PE-only synthesis script
 └── README.md                    # This file
 ```
@@ -450,7 +470,7 @@ accelerator/
 
 | Component | Tool | Version | Role |
 |-----------|------|---------|------|
-| **Frontend Synthesis** | SiliconForge | Custom | RTL → Gate-level netlist + SDC |
+| **Frontend Synthesis** | Custom C++ engine | — | RTL → Gate-level netlist + SDC |
 | **Backend PnR** | LibreLane | 3.0.1 | Floorplan → GDSII |
 | **Place & Route Engine** | OpenROAD | (bundled) | Physical design |
 | **Detailed Router** | TritonRoute | (bundled) | DRC-clean routing |
@@ -467,7 +487,7 @@ accelerator/
 ## Related Projects
 
 - **[RV32IM RISC-V CPU](https://github.com/paramsaini87/riscv-cpu-gds2-flow)** — The host processor this accelerator integrates with. Complete RTL-to-GDSII flow on SKY130.
-- **[SiliconForge](https://github.com/paramsaini87/siliconforge)** — Custom C++ synthesis engine used for the frontend flow.
+- **[Custom Synthesis Engine](https://github.com/paramsaini87/siliconforge)** — My own C++ synthesis engine used for the frontend flow.
 
 ---
 
