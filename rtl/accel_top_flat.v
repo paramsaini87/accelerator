@@ -1,10 +1,10 @@
 // ============================================================================
-// Accelerator Top — Flat Single-Module (for SiliconForge synthesis)
+// Accelerator Top — Flat Single-Module (for custom synthesis flow)
 //
 // This is a FLATTENED version of the accelerator hierarchy:
 //   accel_top → accel_regs + systolic_array_8x8 → 64× systolic_pe
 //
-// All sub-module logic is inlined into this single module so SiliconForge
+// All sub-module logic is inlined into this single module so the synthesis engine
 // can synthesize the entire design in one read_verilog → synth → export_sky130
 // pass. Functionally identical to the hierarchical version.
 //
@@ -364,7 +364,7 @@ module accel_top (
         end
     endgenerate
 
-    // Drain mux — single always block, constant-only array indices (SiliconForge safe)
+    // Drain mux — single always block, constant-only array indices (synthesis safe)
     always @(*) begin
         case (arr_drain_col)
             3'd0: begin

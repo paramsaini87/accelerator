@@ -508,7 +508,7 @@ accelerator/
 ## Related Projects
 
 - **[RV32IM RISC-V CPU](https://github.com/paramsaini87/riscv-cpu-gds2-flow)** — The host processor this accelerator integrates with. Complete RTL-to-GDSII flow on SKY130.
-- **[Custom Synthesis Engine](https://github.com/paramsaini87/siliconforge)** — My own C++ synthesis engine used for the frontend flow.
+- **[Custom Synthesis Engine](https://github.com/paramsaini87/siliconforge)** — My own C++ synthesis engine for the frontend flow.
 
 ---
 
