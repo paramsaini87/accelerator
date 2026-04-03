@@ -32,15 +32,15 @@ module accel_top (
     wire        arr_busy;
     wire        arr_done;
 
-    wire [7:0]  arr_wgt_data [0:7];
+    wire [63:0] arr_wgt_data;
     wire        arr_wgt_valid;
 
-    wire [7:0]  arr_act_data [0:7];
+    wire [63:0] arr_act_data;
     wire        arr_act_valid;
 
-    wire [31:0] arr_result_data [0:7];
-    wire        arr_result_valid;
-    wire [2:0]  arr_result_col;
+    wire [255:0] arr_result_data;
+    wire         arr_result_valid;
+    wire [2:0]   arr_result_col;
 
     // ── Reset for array (includes soft-reset) ─────────────────────────
     wire arr_soft_reset;

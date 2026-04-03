@@ -159,7 +159,7 @@ module tb_accel_top;
 
         // Poll for done
         status = 32'd0;
-        while (!status[1]) begin
+        while (!status[2]) begin
             repeat(10) @(posedge clk);
             bus_read(STATUS, status);
         end
@@ -168,7 +168,7 @@ module tb_accel_top;
         read_results;
 
         // Clear done
-        bus_write(STATUS, 32'h02);
+        bus_write(STATUS, 32'h04);
     end
     endtask
 

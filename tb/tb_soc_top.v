@@ -155,7 +155,7 @@ module tb_soc_top;
 
         // Instruction 4-6: Poll STATUS until done (bit 1)
         dut.imem[4]  = 32'h00412083;   // lw x1, 4(x2)        → x1 = STATUS
-        dut.imem[5]  = 32'h0020F093;   // andi x1, x1, 2      → x1 = STATUS & 2
+        dut.imem[5]  = 32'h0040F093;   // andi x1, x1, 4      → x1 = STATUS & 4 (done at bit 2)
         dut.imem[6]  = 32'hFE008CE3;   // beq x1, x0, -8      → if x1==0, loop back to [4]
 
         // Instruction 7: Read result C[0][0] from RESULT base (0x300)
@@ -186,12 +186,20 @@ module tb_soc_top;
         // A = identity matrix
         for (pi = 0; pi < 8; pi = pi + 1)
             for (pj = 0; pj < 8; pj = pj + 1)
-                dut.u_accel.u_regs.a_buf[pi][pj] = (pi == pj) ? 8'd1 : 8'd0;
+                `ifdef FLAT_ACCEL
+                dut.u_accel.a_buf[pi*8+pj] = (pi == pj) ? 8'd1 : 8'd0;
+                `else
+                dut.u_accel.u_regs.a_buf[pi*8+pj] = (pi == pj) ? 8'd1 : 8'd0;
+                `endif
 
         // B = sequential values: B[i][j] = i*8 + j + 1
         for (pi = 0; pi < 8; pi = pi + 1)
             for (pj = 0; pj < 8; pj = pj + 1)
-                dut.u_accel.u_regs.b_buf[pi][pj] = pi * 8 + pj + 1;
+                `ifdef FLAT_ACCEL
+                dut.u_accel.b_buf[pi*8+pj] = pi * 8 + pj + 1;
+                `else
+                dut.u_accel.u_regs.b_buf[pi*8+pj] = pi * 8 + pj + 1;
+                `endif
     end
     endtask
 
@@ -248,7 +256,11 @@ module tb_soc_top;
         end else if (dut.dmem_mem[TOHOST_WORD] == 32'd2) begin
             $display("  FAIL: CPU firmware reported mismatch");
             $display("    C[0][0] = %0d (expected 1)",
-                     $signed(dut.u_accel.u_regs.c_buf[0][0]));
+                     `ifdef FLAT_ACCEL
+                     $signed(dut.u_accel.c_buf[0]));
+                     `else
+                     $signed(dut.u_accel.u_regs.c_buf[0]));
+                     `endif
             fail_count = fail_count + 1;
         end else begin
             $display("  FAIL: Unexpected TOHOST value: %08h", dut.dmem_mem[TOHOST_WORD]);
@@ -265,7 +277,11 @@ module tb_soc_top;
             for (vi = 0; vi < 8; vi = vi + 1)
                 for (vj = 0; vj < 8; vj = vj + 1) begin
                     expected = vi * 8 + vj + 1;  // identity × B = B
-                    actual = dut.u_accel.u_regs.c_buf[vi][vj];
+                    `ifdef FLAT_ACCEL
+                    actual = dut.u_accel.c_buf[vi*8+vj];
+                    `else
+                    actual = dut.u_accel.u_regs.c_buf[vi*8+vj];
+                    `endif
                     if (actual !== expected) begin
                         if (mismatch < 10)
                             $display("    FAIL C[%0d][%0d]: expected %0d got %0d",

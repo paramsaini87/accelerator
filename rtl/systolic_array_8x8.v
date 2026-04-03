@@ -29,17 +29,17 @@ module systolic_array_8x8 (
     output wire        done,           // operation complete, results ready
 
     // Weight loading (8 weights per cycle, 8 cycles = 64 weights)
-    input  wire [7:0]  wgt_data [0:7], // 8 weight values per cycle
+    input  wire [63:0] wgt_data,       // 8 × 8-bit weights (packed)
     input  wire        wgt_valid,      // weight data valid
 
     // Activation streaming (8 activations per cycle during COMPUTE)
-    input  wire [7:0]  act_data [0:7], // 8 activation values per row
+    input  wire [63:0] act_data,       // 8 × 8-bit activations (packed)
     input  wire        act_valid,      // activation data valid
 
     // Result drain (one column of 8 results per cycle)
-    output wire [31:0] result_data [0:7], // 8 × 32-bit results per drain cycle
-    output wire        result_valid,
-    output wire [2:0]  result_col       // current drain column index
+    output wire [255:0] result_data,   // 8 × 32-bit results (packed)
+    output wire         result_valid,
+    output wire [2:0]   result_col     // current drain column index
 );
 
     // ── FSM States ──────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ module systolic_array_8x8 (
     genvar r, c;
     generate
         for (r = 0; r < 8; r = r + 1) begin : gen_act_boundary
-            assign act_wire[r][0] = (state == S_COMPUTE && act_valid) ? act_data[r] : 8'd0;
+            assign act_wire[r][0] = (state == S_COMPUTE && act_valid) ? act_data[r*8 +: 8] : 8'd0;
         end
     endgenerate
 
@@ -83,7 +83,7 @@ module systolic_array_8x8 (
         for (c = 0; c < 8; c = c + 1) begin : gen_wgt_boundary
             assign wgt_wire[0][c] = ((state == S_LOAD && wgt_valid) ||
                                      (state == S_COMPUTE && wgt_valid))
-                                    ? wgt_data[c] : 8'd0;
+                                    ? wgt_data[c*8 +: 8] : 8'd0;
         end
     endgenerate
 
@@ -121,13 +121,13 @@ module systolic_array_8x8 (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state     <= S_IDLE;
-            cycle_cnt <= 4'd0;
+            cycle_cnt <= 5'd0;
         end else begin
             state <= next_state;
             if (state != next_state)
-                cycle_cnt <= 4'd0;
+                cycle_cnt <= 5'd0;
             else
-                cycle_cnt <= cycle_cnt + 4'd1;
+                cycle_cnt <= cycle_cnt + 5'd1;
         end
     end
 
@@ -141,7 +141,7 @@ module systolic_array_8x8 (
             end
             S_LOAD: begin
                 // 8 cycles to load all 8 rows of weights
-                if (cycle_cnt == 4'd7)
+                if (cycle_cnt == 5'd7)
                     next_state = S_COMPUTE;
             end
             S_COMPUTE: begin
@@ -211,7 +211,7 @@ module systolic_array_8x8 (
     // Mux: select the column being drained
     generate
         for (r = 0; r < 8; r = r + 1) begin : gen_drain_mux
-            assign result_data[r] = pe_acc_out[r][drain_col];
+            assign result_data[r*32 +: 32] = pe_acc_out[r][drain_col];
         end
     endgenerate
 

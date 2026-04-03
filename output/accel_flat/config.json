@@ -1,0 +1,20 @@
+{
+    "DESIGN_NAME": "accel_top",
+    "VERILOG_FILES": ["dir::src/accel_top.v"],
+    "CLOCK_PORT": "clk",
+    "CLOCK_PERIOD": 5.0,
+    "FALLBACK_SDC_FILE": "dir::src/accel_top.sdc",
+    "FP_CORE_UTIL": 40,
+    "PL_TARGET_DENSITY_PCT": 45,
+    "RUN_CTS": true,
+    "RUN_FILL_INSERTION": true,
+    "RUN_LINTER": false,
+    "DESIGN_REPAIR_TIE_FANOUT": false,
+    "PL_RESIZER_HOLD_MAX_BUFFER_PCT": 100,
+    "RUN_ANTENNA_REPAIR": true,
+    "DIODE_ON_PORTS": "both",
+    "RUN_HEURISTIC_DIODE_INSERTION": true,
+    "GRT_REPAIR_ANTENNAS": true,
+    "FP_PDN_VPITCH": 50,
+    "FP_PDN_HPITCH": 50
+}

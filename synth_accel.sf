@@ -1,0 +1,17 @@
+read_verilog designs/accelerator/rtl/systolic_pe.v
+synth
+export_sky130 designs/accelerator/output/pe systolic_pe 5.0
+
+read_verilog designs/accelerator/rtl/accel_regs.v
+synth
+export_sky130 designs/accelerator/output/regs accel_regs 5.0
+
+read_verilog designs/accelerator/rtl/systolic_array_8x8.v
+synth
+export_sky130 designs/accelerator/output/array systolic_array_8x8 5.0
+
+read_verilog designs/accelerator/rtl/accel_top.v
+synth
+export_sky130 designs/accelerator/output/top accel_top 5.0
+
+exit

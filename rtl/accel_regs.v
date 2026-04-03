@@ -11,7 +11,7 @@
 //
 // Register Map (byte addresses relative to base, 32-bit aligned):
 //   0x000       CTRL    [W]   bit 0: start, bit 1: soft-reset (auto-clear)
-//   0x004       STATUS  [R]   bit 0: busy, bit 1: done (W1C), bit 2: irq_en
+//   0x004       STATUS  [R]   bit 0: busy, bit 1: result_valid, bit 2: done (W1C), bit 3: irq_en
 //   0x008       CONFIG  [RW]  bits [4:0]: compute_cycles (default 22)
 //
 //   0x100-0x13C A_MAT   [W]   A matrix, 16 words (row-major, 4 bytes/word)
@@ -44,26 +44,26 @@ module accel_regs (
     input  wire        arr_busy,
     input  wire        arr_done,
 
-    // Array weight interface
-    output reg  [7:0]  arr_wgt_data [0:7],
-    output reg         arr_wgt_valid,
+    // Array weight interface — packed: {wgt[7], ..., wgt[0]}, 8 bytes
+    output reg  [63:0]  arr_wgt_data,
+    output reg          arr_wgt_valid,
 
-    // Array activation interface
-    output reg  [7:0]  arr_act_data [0:7],
-    output reg         arr_act_valid,
+    // Array activation interface — packed: {act[7], ..., act[0]}, 8 bytes
+    output reg  [63:0]  arr_act_data,
+    output reg          arr_act_valid,
 
-    // Array result interface
-    input  wire [31:0] arr_result_data [0:7],
-    input  wire        arr_result_valid,
-    input  wire [2:0]  arr_result_col
+    // Array result interface — packed: {res[7], ..., res[0]}, 8 dwords
+    input  wire [255:0] arr_result_data,
+    input  wire         arr_result_valid,
+    input  wire [2:0]   arr_result_col
 );
 
-    // ── Input Matrix Buffers ─────────────────────────────────────────
-    reg [7:0] a_buf [0:7][0:7];   // A matrix (activations)
-    reg [7:0] b_buf [0:7][0:7];   // B matrix (weights)
+    // ── Input Matrix Buffers (flat 1D: index = row*8 + col) ─────────
+    reg [7:0] a_buf [0:63];   // A matrix (activations)
+    reg [7:0] b_buf [0:63];   // B matrix (weights)
 
-    // ── Output Result Buffer ─────────────────────────────────────────
-    reg [31:0] c_buf [0:7][0:7];  // C = A × B results
+    // ── Output Result Buffer (flat 1D: index = row*8 + col) ─────────
+    reg [31:0] c_buf [0:63];  // C = A × B results
 
     // ── Control/Status ───────────────────────────────────────────────
     reg        done_sticky;
@@ -92,25 +92,29 @@ module accel_regs (
             arr_done_prev <= arr_done;
             if (arr_done & ~arr_done_prev)
                 done_sticky <= 1'b1;
-            // W1C: clear when CPU writes 1 to STATUS bit 1
-            if (req & |wstrb & (addr[11:0] == 12'h004) & wdata[1])
+            // W1C: clear when CPU writes 1 to STATUS bit 2
+            if (req & |wstrb & (addr[11:0] == 12'h004) & wdata[2])
                 done_sticky <= 1'b0;
             if (arr_start)
                 done_sticky <= 1'b0;
         end
     end
 
-    // ── Result Capture ───────────────────────────────────────────────
-    always @(posedge clk) begin
-        if (arr_result_valid) begin
-            c_buf[0][arr_result_col] <= arr_result_data[0];
-            c_buf[1][arr_result_col] <= arr_result_data[1];
-            c_buf[2][arr_result_col] <= arr_result_data[2];
-            c_buf[3][arr_result_col] <= arr_result_data[3];
-            c_buf[4][arr_result_col] <= arr_result_data[4];
-            c_buf[5][arr_result_col] <= arr_result_data[5];
-            c_buf[6][arr_result_col] <= arr_result_data[6];
-            c_buf[7][arr_result_col] <= arr_result_data[7];
+    // ── Result Capture (with async reset for c_buf) ─────────────────
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin : c_buf_reset
+            integer ri;
+            for (ri = 0; ri < 64; ri = ri + 1)
+                c_buf[ri] <= 32'd0;
+        end else if (arr_result_valid) begin
+            c_buf[{3'd0, arr_result_col}] <= arr_result_data[0*32 +: 32];
+            c_buf[{3'd1, arr_result_col}] <= arr_result_data[1*32 +: 32];
+            c_buf[{3'd2, arr_result_col}] <= arr_result_data[2*32 +: 32];
+            c_buf[{3'd3, arr_result_col}] <= arr_result_data[3*32 +: 32];
+            c_buf[{3'd4, arr_result_col}] <= arr_result_data[4*32 +: 32];
+            c_buf[{3'd5, arr_result_col}] <= arr_result_data[5*32 +: 32];
+            c_buf[{3'd6, arr_result_col}] <= arr_result_data[6*32 +: 32];
+            c_buf[{3'd7, arr_result_col}] <= arr_result_data[7*32 +: 32];
         end
     end
 
@@ -119,6 +123,8 @@ module accel_regs (
         if (!rst_n) begin
             sc_state      <= SC_IDLE;
             sc_cnt        <= 5'd0;
+            arr_wgt_data  <= 64'd0;
+            arr_act_data  <= 64'd0;
             arr_wgt_valid <= 1'b0;
             arr_act_valid <= 1'b0;
             arr_start     <= 1'b0;
@@ -142,7 +148,7 @@ module accel_regs (
                     begin : load_wgt_gen
                         integer ci;
                         for (ci = 0; ci < 8; ci = ci + 1)
-                            arr_wgt_data[ci] <= b_buf[sc_cnt[2:0]][ci];
+                            arr_wgt_data[ci*8 +: 8] <= b_buf[{sc_cnt[2:0], ci[2:0]}];
                     end
 
                     sc_cnt <= sc_cnt + 5'd1;
@@ -158,27 +164,25 @@ module accel_regs (
                     arr_wgt_valid <= 1'b1;
 
                     begin : compute_skew_gen
-                        integer ri, rj, idx;
+                        integer ri, rj;
                         // Activations: A[ri][sc_cnt - ri] at row ri
                         for (ri = 0; ri < 8; ri = ri + 1) begin
-                            idx = sc_cnt - ri;
-                            if (idx >= 0 && idx < 8)
-                                arr_act_data[ri] <= a_buf[ri][idx[2:0]];
+                            if (sc_cnt >= ri[4:0] && (sc_cnt - ri[4:0]) < 5'd8)
+                                arr_act_data[ri*8 +: 8] <= a_buf[{ri[2:0], sc_cnt[2:0] - ri[2:0]}];
                             else
-                                arr_act_data[ri] <= 8'd0;
+                                arr_act_data[ri*8 +: 8] <= 8'd0;
                         end
                         // Weights: B[sc_cnt - rj][rj] at column rj
                         for (rj = 0; rj < 8; rj = rj + 1) begin
-                            idx = sc_cnt - rj;
-                            if (idx >= 0 && idx < 8)
-                                arr_wgt_data[rj] <= b_buf[idx[2:0]][rj];
+                            if (sc_cnt >= rj[4:0] && (sc_cnt - rj[4:0]) < 5'd8)
+                                arr_wgt_data[rj*8 +: 8] <= b_buf[{sc_cnt[2:0] - rj[2:0], rj[2:0]}];
                             else
-                                arr_wgt_data[rj] <= 8'd0;
+                                arr_wgt_data[rj*8 +: 8] <= 8'd0;
                         end
                     end
 
                     sc_cnt <= sc_cnt + 5'd1;
-                    if (sc_cnt == config_cycles - 1) begin
+                    if (config_cycles != 5'd0 && sc_cnt == config_cycles - 5'd1) begin
                         sc_state <= SC_WAIT;
                         sc_cnt   <= 5'd0;
                     end
@@ -229,15 +233,15 @@ module accel_regs (
                     row  = widx[3:1];
                     half = widx[0];
                     if (!half) begin
-                        if (wstrb[0]) a_buf[row][0] <= wdata[7:0];
-                        if (wstrb[1]) a_buf[row][1] <= wdata[15:8];
-                        if (wstrb[2]) a_buf[row][2] <= wdata[23:16];
-                        if (wstrb[3]) a_buf[row][3] <= wdata[31:24];
+                        if (wstrb[0]) a_buf[{row, 3'd0}] <= wdata[7:0];
+                        if (wstrb[1]) a_buf[{row, 3'd1}] <= wdata[15:8];
+                        if (wstrb[2]) a_buf[{row, 3'd2}] <= wdata[23:16];
+                        if (wstrb[3]) a_buf[{row, 3'd3}] <= wdata[31:24];
                     end else begin
-                        if (wstrb[0]) a_buf[row][4] <= wdata[7:0];
-                        if (wstrb[1]) a_buf[row][5] <= wdata[15:8];
-                        if (wstrb[2]) a_buf[row][6] <= wdata[23:16];
-                        if (wstrb[3]) a_buf[row][7] <= wdata[31:24];
+                        if (wstrb[0]) a_buf[{row, 3'd4}] <= wdata[7:0];
+                        if (wstrb[1]) a_buf[{row, 3'd5}] <= wdata[15:8];
+                        if (wstrb[2]) a_buf[{row, 3'd6}] <= wdata[23:16];
+                        if (wstrb[3]) a_buf[{row, 3'd7}] <= wdata[31:24];
                     end
                 end
             end
@@ -252,15 +256,15 @@ module accel_regs (
                     row  = widx[3:1];
                     half = widx[0];
                     if (!half) begin
-                        if (wstrb[0]) b_buf[row][0] <= wdata[7:0];
-                        if (wstrb[1]) b_buf[row][1] <= wdata[15:8];
-                        if (wstrb[2]) b_buf[row][2] <= wdata[23:16];
-                        if (wstrb[3]) b_buf[row][3] <= wdata[31:24];
+                        if (wstrb[0]) b_buf[{row, 3'd0}] <= wdata[7:0];
+                        if (wstrb[1]) b_buf[{row, 3'd1}] <= wdata[15:8];
+                        if (wstrb[2]) b_buf[{row, 3'd2}] <= wdata[23:16];
+                        if (wstrb[3]) b_buf[{row, 3'd3}] <= wdata[31:24];
                     end else begin
-                        if (wstrb[0]) b_buf[row][4] <= wdata[7:0];
-                        if (wstrb[1]) b_buf[row][5] <= wdata[15:8];
-                        if (wstrb[2]) b_buf[row][6] <= wdata[23:16];
-                        if (wstrb[3]) b_buf[row][7] <= wdata[31:24];
+                        if (wstrb[0]) b_buf[{row, 3'd4}] <= wdata[7:0];
+                        if (wstrb[1]) b_buf[{row, 3'd5}] <= wdata[15:8];
+                        if (wstrb[2]) b_buf[{row, 3'd6}] <= wdata[23:16];
+                        if (wstrb[3]) b_buf[{row, 3'd7}] <= wdata[31:24];
                     end
                 end
             end
@@ -272,8 +276,8 @@ module accel_regs (
         rdata = 32'd0;
 
         if (byte_addr == 12'h004) begin
-            // STATUS
-            rdata = {28'd0, done_sticky, arr_result_valid, done_sticky, arr_busy};
+            // STATUS: bit 0 busy, bit 1 result_valid, bit 2 done_sticky, bit 3 irq_en
+            rdata = {28'd0, irq_en, done_sticky, arr_result_valid, arr_busy};
         end
         else if (byte_addr == 12'h008) begin
             // CONFIG
@@ -283,11 +287,8 @@ module accel_regs (
             // RESULT buffer: address = 0x300 + (row*8 + col)*4
             begin : result_read
                 reg [5:0] ridx;
-                reg [2:0] rrow, rcol;
                 ridx = byte_addr[7:2];
-                rrow = ridx[5:3];
-                rcol = ridx[2:0];
-                rdata = c_buf[rrow][rcol];
+                rdata = c_buf[ridx];
             end
         end
     end

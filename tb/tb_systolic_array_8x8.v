@@ -24,15 +24,15 @@ module tb_systolic_array_8x8;
     reg        start;
     wire       busy, done;
 
-    reg  [7:0] wgt_data [0:7];
-    reg        wgt_valid;
+    reg  [63:0] wgt_data;
+    reg         wgt_valid;
 
-    reg  [7:0] act_data [0:7];
-    reg        act_valid;
+    reg  [63:0] act_data;
+    reg         act_valid;
 
-    wire [31:0] result_data [0:7];
-    wire        result_valid;
-    wire [2:0]  result_col;
+    wire [255:0] result_data;
+    wire         result_valid;
+    wire [2:0]   result_col;
 
     // ── DUT ─────────────────────────────────────────────────────────────
     systolic_array_8x8 dut (
@@ -94,8 +94,7 @@ module tb_systolic_array_8x8;
         // Feed zeros during the 8 LOAD cycles (required by FSM)
         for (ri = 0; ri < 8; ri = ri + 1) begin
             wgt_valid = 1;
-            for (rj = 0; rj < 8; rj = rj + 1)
-                wgt_data[rj] = 8'd0;
+            wgt_data = 64'd0;
             @(posedge clk); #1;
         end
         wgt_valid = 0;
@@ -111,9 +110,9 @@ module tb_systolic_array_8x8;
             for (ri = 0; ri < 8; ri = ri + 1) begin
                 rj = cycle - ri;
                 if (rj >= 0 && rj < 8)
-                    act_data[ri] = mat_a[ri][rj];
+                    act_data[ri*8 +: 8] = mat_a[ri][rj];
                 else
-                    act_data[ri] = 8'd0;
+                    act_data[ri*8 +: 8] = 8'd0;
             end
 
             // Weights: B[k][col] enters column `col` at cycle k+col
@@ -121,9 +120,9 @@ module tb_systolic_array_8x8;
             for (rj = 0; rj < 8; rj = rj + 1) begin
                 ri = cycle - rj;
                 if (ri >= 0 && ri < 8)
-                    wgt_data[rj] = mat_b[ri][rj];
+                    wgt_data[rj*8 +: 8] = mat_b[ri][rj];
                 else
-                    wgt_data[rj] = 8'd0;
+                    wgt_data[rj*8 +: 8] = 8'd0;
             end
 
             @(posedge clk); #1;
@@ -136,7 +135,7 @@ module tb_systolic_array_8x8;
             @(posedge clk); #1;
             if (result_valid) begin
                 for (rj = 0; rj < 8; rj = rj + 1)
-                    mat_r[rj][result_col] = $signed(result_data[rj]);
+                    mat_r[rj][result_col] = $signed(result_data[rj*32 +: 32]);
             end
         end
 
@@ -178,10 +177,8 @@ module tb_systolic_array_8x8;
         start = 0;
         wgt_valid = 0;
         act_valid = 0;
-        for (i = 0; i < 8; i = i + 1) begin
-            wgt_data[i] = 0;
-            act_data[i] = 0;
-        end
+        wgt_data = 64'd0;
+        act_data = 64'd0;
         @(posedge clk);
         @(posedge clk);
         rst_n = 1;

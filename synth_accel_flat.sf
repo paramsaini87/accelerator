@@ -1,0 +1,10 @@
+// SiliconForge synthesis script — Full Accelerator (flat single-module)
+// Track 1 flow: read_verilog → synth → export_sky130
+
+read_verilog designs/accelerator/rtl/accel_top_flat.v
+
+synth -period 5.0
+
+export_sky130 designs/accelerator/output/accel_flat accel_top 5.0
+
+exit
